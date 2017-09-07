@@ -16,16 +16,21 @@ pub struct RawConnection {
 const BUSY_TIMEOUT: i32 = 5000;
 
 impl RawConnection {
-    pub fn establish(database_url: &str) -> ConnectionResult<Self> {
+    pub fn establish(database_url: &str, password: Option<String>) -> ConnectionResult<Self> {
         let mut conn_pointer = ptr::null_mut();
         let database_url = try!(CString::new(database_url));
         let connection_status = unsafe {
-            match ffi::sqlite3_open(database_url.as_ptr(), &mut conn_pointer) {
-                ffi::SQLITE_OK => ffi::sqlite3_busy_timeout(conn_pointer, BUSY_TIMEOUT),
-                err_code => err_code,
+            let mut status_code = ffi::sqlite3_open(database_url.as_ptr(), &mut conn_pointer);
+            ensure_status_code_ok(status_code)?;
+            status_code = ffi::sqlite3_busy_timeout(conn_pointer, BUSY_TIMEOUT);
+            if let Some(pwd) = password {
+                ensure_status_code_ok(status_code)?;
+                let passphrase = try!(CString::new(pwd.clone()));
+                let passphrase_len = (pwd.len() + 1) as libc::c_int;
+                status_code = ffi::sqlite3_key(conn_pointer, passphrase.as_ptr() as *mut libc::c_void, passphrase_len);
             }
+            status_code
         };
-
         match connection_status {
             ffi::SQLITE_OK => Ok(RawConnection {
                 internal_connection: conn_pointer,
@@ -73,6 +78,14 @@ impl RawConnection {
     pub fn last_error_code(&self) -> libc::c_int {
         unsafe { ffi::sqlite3_extended_errcode(self.internal_connection) }
     }
+
+    pub fn rekey(&self, password: &str) -> QueryResult<libc::c_int> {
+        let passphrase = try!(CString::new(password));
+        let passphrase_len = (password.len() + 1) as libc::c_int;
+        unsafe {
+            Ok(ffi::sqlite3_rekey(self.internal_connection, passphrase.as_ptr() as *mut libc::c_void, passphrase_len))
+        }
+    }
 }
 
 impl Drop for RawConnection {
@@ -102,4 +115,14 @@ fn convert_to_string_and_free(err_msg: *const libc::c_char) -> String {
     };
     unsafe { ffi::sqlite3_free(err_msg as *mut libc::c_void) };
     msg
+}
+
+fn ensure_status_code_ok(status_code: libc::c_int) -> ConnectionResult<()> {
+    match status_code {
+        ffi::SQLITE_OK => Ok(()),
+        err_code => {
+            let message = super::error_message(err_code);
+            Err(ConnectionError::BadConnection(message.into()))
+        }
+    }
 }

@@ -30,7 +30,7 @@ pub trait Connection: SimpleConnection + Sized + Send {
     /// Establishes a new connection to the database at the given URL. The URL
     /// should be a valid connection string for a given backend. See the
     /// documentation for the specific backend for specifics.
-    fn establish(database_url: &str) -> ConnectionResult<Self>;
+    fn establish(database_url: &str, password: Option<String>) -> ConnectionResult<Self>;
 
     /// Executes the given function inside of a database transaction. When
     /// a transaction is already occurring, savepoints will be used to emulate a nested

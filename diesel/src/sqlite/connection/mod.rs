@@ -44,8 +44,8 @@ impl Connection for SqliteConnection {
     type Backend = Sqlite;
     type TransactionManager = AnsiTransactionManager;
 
-    fn establish(database_url: &str) -> ConnectionResult<Self> {
-        RawConnection::establish(database_url).map(|conn| {
+    fn establish(database_url: &str, password: Option<String>) -> ConnectionResult<Self> {
+        RawConnection::establish(database_url, password).map(|conn| {
             SqliteConnection {
                 statement_cache: StatementCache::new(),
                 raw_connection: Rc::new(conn),
@@ -123,6 +123,16 @@ impl SqliteConnection {
             &[],
             |sql| Statement::prepare(&self.raw_connection, sql),
         )
+    }
+
+    pub fn change_password(&self, password: &str) -> QueryResult<()> {
+        match self.raw_connection.rekey(password)? {
+            ffi::SQLITE_OK => Ok(()),
+            err_code => {
+                let message = error_message(err_code);
+                Err(Error::DatabaseError(DatabaseErrorKind::UnableToReEncrypt ,Box::new(message.to_string())))
+            }
+        }
     }
 }
 

@@ -46,7 +46,7 @@ impl Connection for PgConnection {
     type Backend = Pg;
     type TransactionManager = AnsiTransactionManager;
 
-    fn establish(database_url: &str) -> ConnectionResult<PgConnection> {
+    fn establish(database_url: &str, _: Option<String>) -> ConnectionResult<PgConnection> {
         RawConnection::establish(database_url).and_then(|raw_conn| {
             let conn = PgConnection {
                 raw_connection: raw_conn,
