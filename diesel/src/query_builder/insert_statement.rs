@@ -284,12 +284,14 @@ impl<'a, T, U, Op, Ret> ExecuteDsl<::sqlite::SqliteConnection>
         Ret: Copy,
 {
     fn execute(self, conn: &::sqlite::SqliteConnection) -> QueryResult<usize> {
-        let mut result = 0;
-        for record in self.records {
-            result += InsertStatement::new(self.target, record, self.operator, self.returning)
-                .execute(conn)?;
-        }
-        Ok(result)
+        conn.transaction::<usize, ::result::Error, _> (|| {
+            let mut result = 0;
+            for record in self.records {
+                result += InsertStatement::new(self.target, record, self.operator, self.returning)
+                    .execute(conn)?;
+            }
+            Ok(result)
+        })
     }
 }
 
