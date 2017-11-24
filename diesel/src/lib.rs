@@ -22,6 +22,8 @@
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;
+#[macro_use]
+extern crate log;
 
 #[macro_use]
 mod macros;
@@ -140,7 +142,7 @@ pub mod helper_types {
 pub mod prelude {
     //! Re-exports important traits and types. Meant to be glob imported when using Diesel.
     pub use associations::{GroupedBy, Identifiable};
-    pub use connection::Connection;
+    pub use connection::{Connection, Config};
     pub use expression::{AppearsOnTable, BoxableExpression, Expression, SelectableExpression};
     pub use expression_methods::*;
     #[doc(inline)]

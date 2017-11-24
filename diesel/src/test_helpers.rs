@@ -5,7 +5,7 @@ cfg_if! {
         pub type TestConnection = SqliteConnection;
 
         pub fn connection() -> TestConnection {
-            SqliteConnection::establish(":memory:").unwrap()
+            SqliteConnection::establish(":memory:", Config::default()).unwrap()
         }
     } else if #[cfg(feature = "postgres")] {
         extern crate dotenv;

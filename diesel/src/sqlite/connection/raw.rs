@@ -4,6 +4,7 @@ use std::ffi::{CStr, CString};
 use std::io::{stderr, Write};
 use std::os::raw as libc;
 use std::{ptr, str};
+use std::slice::from_raw_parts_mut;
 
 use result::*;
 use result::Error::DatabaseError;
@@ -86,6 +87,60 @@ impl RawConnection {
             Ok(ffi::sqlite3_rekey(self.internal_connection, passphrase.as_ptr() as *mut libc::c_void, passphrase_len))
         }
     }
+
+    pub fn execute_for_string(&self, query: &str, delimiter: &str) -> QueryResult<String> {
+        let query = try!(CString::new(query));
+        let mut result = 0 as *mut *mut libc::c_char;
+        let mut row_num = 0;
+        let mut column_num = 0;
+        let mut err_msg = ptr::null_mut();
+
+        unsafe {
+            ffi::sqlite3_get_table(
+                self.internal_connection,
+                query.as_ptr(),
+                &mut result,
+                &mut row_num,
+                &mut column_num,
+                &mut err_msg
+            );
+        }
+
+        if !err_msg.is_null() {
+            let msg = convert_to_string_and_free(err_msg);
+            let error_kind = DatabaseErrorKind::__Unknown;
+            return Err(DatabaseError(error_kind, Box::new(msg)));
+        }
+
+        let row_num = (row_num + 1) as usize;
+        let column_num = column_num as usize;
+        let mut row_values = Vec::with_capacity(row_num);
+        let values = unsafe {
+            from_raw_parts_mut(result, row_num*column_num)
+        };
+
+        for row_index in 1..row_num {
+            let mut column_values = Vec::with_capacity(column_num);
+            for column_index in 0..column_num {
+                let index = row_index*column_num + column_index;
+                if let Some(element) = values.get(index) {
+                    if element.is_null() {
+                        column_values.push("NULL".to_owned());
+                        continue;
+                    }
+                    let value = convert_to_string(*element);
+                    column_values.push(value);
+                }
+            }
+            row_values.push(column_values.join(delimiter));
+        }
+
+        unsafe {
+            ffi::sqlite3_free_table(result);
+        }
+
+        Ok(row_values.join("\n"))
+    }
 }
 
 impl Drop for RawConnection {
@@ -108,12 +163,17 @@ impl Drop for RawConnection {
     }
 }
 
-fn convert_to_string_and_free(err_msg: *const libc::c_char) -> String {
+fn convert_to_string(raw_msg: *const libc::c_char) -> String {
     let msg = unsafe {
-        let bytes = CStr::from_ptr(err_msg).to_bytes();
+        let bytes = CStr::from_ptr(raw_msg).to_bytes();
         str::from_utf8_unchecked(bytes).into()
     };
-    unsafe { ffi::sqlite3_free(err_msg as *mut libc::c_void) };
+    msg
+}
+
+fn convert_to_string_and_free(raw_msg: *const libc::c_char) -> String {
+    let msg = convert_to_string(raw_msg);
+    unsafe { ffi::sqlite3_free(raw_msg as *mut libc::c_void) };
     msg
 }
 

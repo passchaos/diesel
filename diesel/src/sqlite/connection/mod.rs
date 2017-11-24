@@ -8,6 +8,7 @@ mod sqlite_value;
 
 pub use self::sqlite_value::SqliteValue;
 
+use std::time::{Instant, Duration};
 use std::os::raw as libc;
 use std::rc::Rc;
 
@@ -19,7 +20,7 @@ use result::*;
 use self::raw::RawConnection;
 use self::statement_iterator::StatementIterator;
 use self::stmt::{Statement, StatementUse};
-use sqlite::Sqlite;
+use sqlite::{Sqlite, SqliteQueryBuilder};
 use types::HasSqlType;
 
 #[allow(missing_debug_implementations)]
@@ -27,6 +28,8 @@ pub struct SqliteConnection {
     statement_cache: StatementCache<Sqlite, Statement>,
     raw_connection: Rc<RawConnection>,
     transaction_manager: AnsiTransactionManager,
+    is_log_query: bool,
+    is_explain_query: bool,
 }
 
 // This relies on the invariant that RawConnection or Statement are never
@@ -44,19 +47,25 @@ impl Connection for SqliteConnection {
     type Backend = Sqlite;
     type TransactionManager = AnsiTransactionManager;
 
-    fn establish(database_url: &str, password: Option<String>) -> ConnectionResult<Self> {
+    fn establish(database_url: &str, config: Config) -> ConnectionResult<Self> {
+        let password = config.password.clone();
         RawConnection::establish(database_url, password).map(|conn| {
             SqliteConnection {
                 statement_cache: StatementCache::new(),
                 raw_connection: Rc::new(conn),
                 transaction_manager: AnsiTransactionManager::new(),
+                is_log_query: config.is_log_query,
+                is_explain_query: config.is_explain_query,
             }
         })
     }
 
     #[doc(hidden)]
     fn execute(&self, query: &str) -> QueryResult<usize> {
+        let _logger = QueryLogger::new(query, self.is_log_query);
+        try!(self.explain_query(query));
         try!(self.batch_execute(query));
+
         Ok(self.raw_connection.rows_affected_by_last_query())
     }
 
@@ -68,8 +77,13 @@ impl Connection for SqliteConnection {
         Self::Backend: HasSqlType<T::SqlType>,
         U: Queryable<T::SqlType, Self::Backend>,
     {
-        let mut statement = try!(self.prepare_query(&source.as_query()));
+        let query = source.as_query();
+        let mut statement = try!(self.prepare_query(&query));
         let statement_use = StatementUse::new(&mut statement);
+        if self.is_log_query || self.is_explain_query {
+            let query = try!(self.construct_and_explain_query(&query));
+            let _query_logger = QueryLogger::new(&query, self.is_log_query);
+        }
         let iter = StatementIterator::new(statement_use);
         iter.collect()
     }
@@ -81,6 +95,10 @@ impl Connection for SqliteConnection {
     {
         let mut statement = try!(self.prepare_query(source));
         let statement_use = StatementUse::new(&mut statement);
+        if self.is_log_query || self.is_explain_query {
+            let query = try!(self.construct_and_explain_query(source));
+            let _query_logger = QueryLogger::new(&query, self.is_log_query);
+        }
         try!(statement_use.run());
         Ok(self.raw_connection.rows_affected_by_last_query())
     }
@@ -134,6 +152,76 @@ impl SqliteConnection {
             }
         }
     }
+
+    /// Return String
+    /// Elements in each row are separated by delimiter
+    /// Rows are separated by `\n`
+    pub fn execute_for_string(&self, query: &str, delimiter: &str) -> QueryResult<String> {
+        self.raw_connection.execute_for_string(query, delimiter)
+    }
+
+    fn construct_and_explain_query(&self, source: &QueryFragment<Sqlite>) -> QueryResult<String> {
+        let mut query_builder = SqliteQueryBuilder::new();
+        try!(source.to_sql(&mut query_builder));
+        let query = query_builder.finish();
+        try!(self.explain_query(&query));
+
+        Ok(query)
+    }
+
+    fn explain_query(&self, query: &str) -> QueryResult<()> {
+        if query == "SELECT 1" {
+            return Ok(())
+        }
+        if !self.is_explain_query {
+            return Ok(())
+        }
+        let explain_query = format!("EXPLAIN QUERY PLAN {}", query);
+        let explain = try!(self.execute_for_string(&explain_query, "|"));
+        debug!("explain query: query= {}\nexplain= \n{}", query, explain);
+
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct QueryLogger {
+    query: Option<String>,
+    st: Option<Instant>,
+}
+
+impl QueryLogger {
+    fn new(query: &str, is_log: bool) -> Self {
+        if query == "SELECT 1" {
+            return QueryLogger::default()
+        }
+
+        match is_log {
+            true => {
+                let st = Instant::now();
+                QueryLogger {
+                    query: Some(query.to_owned()),
+                    st: Some(st),
+                }
+            }
+            false => QueryLogger::default()
+        }
+    }
+}
+
+impl Drop for QueryLogger {
+    fn drop(&mut self) {
+        if let Some(st) = self.st {
+            let duration = get_duration_millisecond(st.elapsed());
+            debug!("execute query end: query= {:?} st={:?} cost= {:?}ms",
+                   self.query, self.st, duration);
+        }
+    }
+}
+
+fn get_duration_millisecond(duration: Duration) -> u64
+{
+    (duration.as_secs() * 1_000) + (duration.subsec_nanos() / 1_000_000) as u64
 }
 
 fn error_message(err_code: libc::c_int) -> &'static str {
@@ -150,7 +238,7 @@ mod tests {
 
     #[test]
     fn prepared_statements_are_cached_when_run() {
-        let connection = SqliteConnection::establish(":memory:").unwrap();
+        let connection = SqliteConnection::establish(":memory:", Config::default()).unwrap();
         let query = ::select(AsExpression::<Integer>::as_expression(1));
 
         assert_eq!(Ok(1), query.get_result(&connection));
@@ -160,7 +248,7 @@ mod tests {
 
     #[test]
     fn sql_literal_nodes_are_not_cached() {
-        let connection = SqliteConnection::establish(":memory:").unwrap();
+        let connection = SqliteConnection::establish(":memory:", Config::default()).unwrap();
         let query = ::select(sql::<Integer>("1"));
 
         assert_eq!(Ok(1), query.get_result(&connection));
@@ -169,7 +257,7 @@ mod tests {
 
     #[test]
     fn queries_containing_sql_literal_nodes_are_not_cached() {
-        let connection = SqliteConnection::establish(":memory:").unwrap();
+        let connection = SqliteConnection::establish(":memory:", Config::default()).unwrap();
         let one_as_expr = AsExpression::<Integer>::as_expression(1);
         let query = ::select(one_as_expr.eq(sql::<Integer>("1")));
 
@@ -179,7 +267,7 @@ mod tests {
 
     #[test]
     fn queries_containing_in_with_vec_are_not_cached() {
-        let connection = SqliteConnection::establish(":memory:").unwrap();
+        let connection = SqliteConnection::establish(":memory:", Config::default()).unwrap();
         let one_as_expr = AsExpression::<Integer>::as_expression(1);
         let query = ::select(one_as_expr.eq_any(vec![1, 2, 3]));
 
@@ -189,11 +277,38 @@ mod tests {
 
     #[test]
     fn queries_containing_in_with_subselect_are_cached() {
-        let connection = SqliteConnection::establish(":memory:").unwrap();
+        let connection = SqliteConnection::establish(":memory:", Config::default()).unwrap();
         let one_as_expr = AsExpression::<Integer>::as_expression(1);
         let query = ::select(one_as_expr.eq_any(::select(one_as_expr)));
 
         assert_eq!(Ok(true), query.get_result(&connection));
         assert_eq!(1, connection.statement_cache.len());
+    }
+
+    #[test]
+    fn test_execute_for_string1() {
+        let connection = SqliteConnection::establish(":memory:", Config::default()).unwrap();
+        let query = "PRAGMA JOURNAL_MODE";
+        let result = connection.execute_for_string(query, "").unwrap();
+
+        assert_eq!("memory", result);
+    }
+
+    #[test]
+    fn test_execute_for_string2() {
+        let connection = SqliteConnection::establish(":memory:", Config::default()).unwrap();
+        let query = "PRAGMA LOCKING_MODE";
+        let result = connection.execute_for_string(query, "").unwrap();
+
+        assert_eq!("normal", result);
+    }
+
+    #[test]
+    fn test_execute_for_string3() {
+        let connection = SqliteConnection::establish(":memory:", Config::default()).unwrap();
+        let query = "PRAGMA CACHE_SIZE";
+        let result = connection.execute_for_string(query, "").unwrap();
+
+        assert_eq!("-2000", result);
     }
 }

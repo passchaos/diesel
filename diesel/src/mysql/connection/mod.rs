@@ -36,7 +36,7 @@ impl Connection for MysqlConnection {
     type Backend = Mysql;
     type TransactionManager = AnsiTransactionManager;
 
-    fn establish(database_url: &str, _: Option<String>) -> ConnectionResult<Self> {
+    fn establish(database_url: &str, _: Config) -> ConnectionResult<Self> {
         use result::ConnectionError::CouldntSetupConfiguration;
 
         let raw_connection = RawConnection::new();
