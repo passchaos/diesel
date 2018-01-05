@@ -1,9 +1,13 @@
 extern crate libsqlite3_sys as ffi;
+extern crate url;
+
+use self::url::Url;
 
 use std::ffi::{CStr, CString};
 use std::io::{stderr, Write};
 use std::os::raw as libc;
 use std::{ptr, str};
+use std::collections::HashMap;
 
 use result::*;
 use result::Error::DatabaseError;
@@ -16,17 +20,29 @@ pub struct RawConnection {
 const BUSY_TIMEOUT: i32 = 5000;
 
 impl RawConnection {
-    pub fn establish(database_url: &str, password: Option<String>) -> ConnectionResult<Self> {
+    /// Support database_url like sqlite:db.db?key=123
+    pub fn establish(database_url: &str) -> ConnectionResult<Self> {
+        let url = try!(Url::parse(database_url).map_err(|_| {
+            ConnectionError::InvalidConnectionUrl(database_url.to_owned())
+        }));
+        if url.scheme() != "sqlite" {
+            return Err(ConnectionError::InvalidConnectionUrl(database_url.to_owned()));
+        }
+
+        let database_url = url.path();
+        let params: HashMap<_, _> = url.query_pairs().collect();
+        let key = params.get("key");
+
         let mut conn_pointer = ptr::null_mut();
         let database_url = try!(CString::new(database_url));
         let connection_status = unsafe {
             let mut status_code = ffi::sqlite3_open(database_url.as_ptr(), &mut conn_pointer);
             ensure_status_code_ok(status_code)?;
             status_code = ffi::sqlite3_busy_timeout(conn_pointer, BUSY_TIMEOUT);
-            if let Some(pwd) = password {
+            if let Some(key) = key {
                 ensure_status_code_ok(status_code)?;
-                let passphrase = try!(CString::new(pwd.clone()));
-                let passphrase_len = (pwd.len() + 1) as libc::c_int;
+                let passphrase = try!(CString::new(key.to_string()));
+                let passphrase_len = (key.len() + 1) as libc::c_int;
                 status_code = ffi::sqlite3_key(conn_pointer, passphrase.as_ptr() as *mut libc::c_void, passphrase_len);
             }
             status_code
