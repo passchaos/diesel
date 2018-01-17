@@ -44,8 +44,8 @@ impl Connection for SqliteConnection {
     type Backend = Sqlite;
     type TransactionManager = AnsiTransactionManager;
 
-    fn establish(database_url: &str, password: Option<String>) -> ConnectionResult<Self> {
-        RawConnection::establish(database_url, password).map(|conn| {
+    fn establish(database_url: &str) -> ConnectionResult<Self> {
+        RawConnection::establish(database_url).map(|conn| {
             SqliteConnection {
                 statement_cache: StatementCache::new(),
                 raw_connection: Rc::new(conn),
