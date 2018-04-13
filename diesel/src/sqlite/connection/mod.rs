@@ -124,16 +124,6 @@ impl SqliteConnection {
             |sql| Statement::prepare(&self.raw_connection, sql),
         )
     }
-
-    pub fn change_password(&self, password: &str) -> QueryResult<()> {
-        match self.raw_connection.rekey(password)? {
-            ffi::SQLITE_OK => Ok(()),
-            err_code => {
-                let message = error_message(err_code);
-                Err(Error::DatabaseError(DatabaseErrorKind::UnableToReEncrypt ,Box::new(message.to_string())))
-            }
-        }
-    }
 }
 
 fn error_message(err_code: libc::c_int) -> &'static str {

@@ -73,14 +73,6 @@ impl RawConnection {
     pub fn last_error_code(&self) -> libc::c_int {
         unsafe { ffi::sqlite3_extended_errcode(self.internal_connection) }
     }
-
-    pub fn rekey(&self, password: &str) -> QueryResult<libc::c_int> {
-        let passphrase = try!(CString::new(password));
-        let passphrase_len = (password.len() + 1) as libc::c_int;
-        unsafe {
-            Ok(ffi::sqlite3_rekey(self.internal_connection, passphrase.as_ptr() as *mut libc::c_void, passphrase_len))
-        }
-    }
 }
 
 impl Drop for RawConnection {
