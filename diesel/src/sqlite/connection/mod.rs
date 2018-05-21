@@ -8,9 +8,10 @@ mod sqlite_value;
 
 pub use self::sqlite_value::SqliteValue;
 
-use std::time::{Instant, Duration};
+use std::time::Instant;
 use std::os::raw as libc;
 use std::rc::Rc;
+use std::env::var;
 
 use connection::*;
 use query_builder::*;
@@ -29,7 +30,7 @@ pub struct SqliteConnection {
     raw_connection: Rc<RawConnection>,
     transaction_manager: AnsiTransactionManager,
     is_log_query: bool,
-    is_explain_query: bool,
+    is_explain_query: bool
 }
 
 // This relies on the invariant that RawConnection or Statement are never
@@ -47,22 +48,21 @@ impl Connection for SqliteConnection {
     type Backend = Sqlite;
     type TransactionManager = AnsiTransactionManager;
 
-    fn establish(database_url: &str, config: Config) -> ConnectionResult<Self> {
-        let password = config.password.clone();
-        RawConnection::establish(database_url, password).map(|conn| {
+    fn establish(database_url: &str) -> ConnectionResult<Self> {
+        RawConnection::establish(database_url).map(|conn| {
             SqliteConnection {
                 statement_cache: StatementCache::new(),
                 raw_connection: Rc::new(conn),
                 transaction_manager: AnsiTransactionManager::new(),
-                is_log_query: config.is_log_query,
-                is_explain_query: config.is_explain_query,
+                is_log_query: var("IS_LOG_QUERY").map(|v| v == "true").unwrap_or(false),
+                is_explain_query: var("IS_EXPLAIN_QUERY").map(|v| v == "true").unwrap_or(false),
             }
         })
     }
 
     #[doc(hidden)]
     fn execute(&self, query: &str) -> QueryResult<usize> {
-        let _logger = QueryLogger::new(query, self.is_log_query);
+        let _logger = QueryLogger::new(Some(query.to_owned()), self.is_log_query);
         try!(self.explain_query(query));
         try!(self.batch_execute(query));
 
@@ -80,10 +80,12 @@ impl Connection for SqliteConnection {
         let query = source.as_query();
         let mut statement = try!(self.prepare_query(&query));
         let statement_use = StatementUse::new(&mut statement);
-        if self.is_log_query || self.is_explain_query {
-            let query = try!(self.construct_and_explain_query(&query));
-            let _query_logger = QueryLogger::new(&query, self.is_log_query);
-        }
+        let query = if self.is_log_query || self.is_explain_query {
+            Some(try!(self.construct_and_explain_query(&query)))
+        } else {
+            None
+        };
+        let _query_logger = QueryLogger::new(query, self.is_log_query);
         let iter = StatementIterator::new(statement_use);
         iter.collect()
     }
@@ -95,10 +97,12 @@ impl Connection for SqliteConnection {
     {
         let mut statement = try!(self.prepare_query(source));
         let statement_use = StatementUse::new(&mut statement);
-        if self.is_log_query || self.is_explain_query {
-            let query = try!(self.construct_and_explain_query(source));
-            let _query_logger = QueryLogger::new(&query, self.is_log_query);
-        }
+        let query = if self.is_log_query || self.is_explain_query {
+            Some(try!(self.construct_and_explain_query(source)))
+        } else {
+            None
+        };
+        let _query_logger = QueryLogger::new(query, self.is_log_query);
         try!(statement_use.run());
         Ok(self.raw_connection.rows_affected_by_last_query())
     }
@@ -187,42 +191,48 @@ impl SqliteConnection {
 #[derive(Default)]
 struct QueryLogger {
     query: Option<String>,
-    st: Option<Instant>,
+    _st: Option<Instant>,
 }
 
 impl QueryLogger {
-    fn new(query: &str, is_log: bool) -> Self {
-        if query == "SELECT 1" {
-            return QueryLogger::default()
-        }
+    fn new(query: Option<String>, is_log: bool) -> Self {
+        match query {
+            Some(query) => {
+                if query == "SELECT 1" {
+                    return QueryLogger::default()
+                }
 
-        match is_log {
-            true => {
-                let st = Instant::now();
-                QueryLogger {
-                    query: Some(query.to_owned()),
-                    st: Some(st),
+                match is_log {
+                    true => {
+                        info!("start execute: {}", query);
+                        let st = Instant::now();
+                        QueryLogger {
+                            query: Some(query.to_owned()),
+                            _st: Some(st),
+                        }
+                    }
+                    false => QueryLogger::default()
                 }
             }
-            false => QueryLogger::default()
+            None => {
+                QueryLogger::default()
+            }
         }
     }
 }
 
 impl Drop for QueryLogger {
     fn drop(&mut self) {
-        if let Some(st) = self.st {
-            let duration = get_duration_millisecond(st.elapsed());
-            debug!("execute query end: query= {:?} st={:?} cost= {:?}ms",
-                   self.query, self.st, duration);
+        if let Some(query) = self.query.as_ref() {
+            info!("end execute: {}", query);
         }
     }
 }
 
-fn get_duration_millisecond(duration: Duration) -> u64
-{
-    (duration.as_secs() * 1_000) + (duration.subsec_nanos() / 1_000_000) as u64
-}
+//fn get_duration_millisecond(duration: Duration) -> u64
+//{
+//    (duration.as_secs() * 1_000) + (duration.subsec_nanos() / 1_000_000) as u64
+//}
 
 fn error_message(err_code: libc::c_int) -> &'static str {
     ffi::code_to_str(err_code)

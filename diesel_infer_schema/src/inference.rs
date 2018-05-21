@@ -128,7 +128,7 @@ fn establish_real_connection<Conn>(database_url: &str) -> Result<Conn, Box<Error
 where
     Conn: Connection,
 {
-    Conn::establish(database_url, Config::default()).map_err(|error| {
+    Conn::establish(database_url).map_err(|error| {
         format!(
             "Failed to establish a database connection at {}. Error: {:?}",
             database_url,

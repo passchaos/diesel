@@ -20,61 +20,6 @@ pub trait SimpleConnection {
     fn batch_execute(&self, query: &str) -> QueryResult<()>;
 }
 
-#[derive(Debug, Clone)]
-pub struct Config {
-    pub password: Option<String>,
-    pub is_log_query: bool,
-    pub is_explain_query: bool,
-}
-
-impl Config {
-    pub fn builder() -> ConfigBuilder {
-        ConfigBuilder::default()
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            password: None,
-            is_log_query: false,
-            is_explain_query: false,
-        }
-    }
-}
-
-#[derive(Default, Debug)]
-pub struct ConfigBuilder {
-    config: Config
-}
-
-impl ConfigBuilder {
-    /// The password for this database
-    /// default to None
-    pub fn password(mut self, password: &str) -> Self {
-        self.config.password = Some(password.to_owned());
-        self
-    }
-
-    /// Is log query, start time, time cost for any execute
-    /// default to false
-    pub fn is_log_query(mut self, is_log_query: bool) -> Self {
-        self.config.is_log_query = is_log_query;
-        self
-    }
-
-    /// Is explain each query
-    /// default to false
-    pub fn is_explain_query(mut self, is_explain_query: bool) -> Self {
-        self.config.is_explain_query = is_explain_query;
-        self
-    }
-
-    pub fn build(self) -> Config {
-        self.config
-    }
-}
-
 /// Perform connections to a backend.
 pub trait Connection: SimpleConnection + Sized + Send {
     /// The backend this connection represents.
@@ -85,7 +30,7 @@ pub trait Connection: SimpleConnection + Sized + Send {
     /// Establishes a new connection to the database at the given URL. The URL
     /// should be a valid connection string for a given backend. See the
     /// documentation for the specific backend for specifics.
-    fn establish(database_url: &str, config: Config) -> ConnectionResult<Self>;
+    fn establish(database_url: &str) -> ConnectionResult<Self>;
 
     /// Executes the given function inside of a database transaction. When
     /// a transaction is already occurring, savepoints will be used to emulate a nested
