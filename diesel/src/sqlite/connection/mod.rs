@@ -11,6 +11,9 @@ mod stmt;
 pub use self::sqlite_value::SqliteValue;
 
 use std::os::raw as libc;
+use std::rc::Rc;
+use std::ptr;
+use std::ffi::CString;
 
 use self::raw::RawConnection;
 use self::statement_iterator::*;
@@ -30,8 +33,9 @@ use sqlite::Sqlite;
 #[allow(missing_debug_implementations)]
 pub struct SqliteConnection {
     statement_cache: StatementCache<Sqlite, Statement>,
-    raw_connection: RawConnection,
+    raw_connection: Rc<RawConnection>,
     transaction_manager: AnsiTransactionManager,
+    on_execute: Option<Box<Fn(&SqliteConnection, &str)>>,
 }
 
 // This relies on the invariant that RawConnection or Statement are never
@@ -41,6 +45,9 @@ unsafe impl Send for SqliteConnection {}
 
 impl SimpleConnection for SqliteConnection {
     fn batch_execute(&self, query: &str) -> QueryResult<()> {
+        if let Some(ref on_execute) = self.on_execute {
+            on_execute(&self, query);
+        }
         self.raw_connection.exec(query)
     }
 }
@@ -50,10 +57,13 @@ impl Connection for SqliteConnection {
     type TransactionManager = AnsiTransactionManager;
 
     fn establish(database_url: &str) -> ConnectionResult<Self> {
-        RawConnection::establish(database_url).map(|conn| SqliteConnection {
-            statement_cache: StatementCache::new(),
-            raw_connection: conn,
-            transaction_manager: AnsiTransactionManager::new(),
+        RawConnection::establish(database_url).map(|conn| {
+            SqliteConnection {
+                statement_cache: StatementCache::new(),
+                raw_connection: Rc::new(conn),
+                transaction_manager: AnsiTransactionManager::new(),
+                on_execute: None
+            }
         })
     }
 
@@ -209,6 +219,9 @@ impl SqliteConnection {
         source: &T,
     ) -> QueryResult<MaybeCached<Statement>> {
         self.statement_cache.cached_statement(source, &[], |sql| {
+            if let Some(ref on_execute) = self.on_execute {
+                on_execute(&self, sql);
+            }
             Statement::prepare(&self.raw_connection, sql)
         })
     }
@@ -227,6 +240,42 @@ impl SqliteConnection {
         Sqlite: HasSqlType<RetSqlType>,
     {
         functions::register(&self.raw_connection, fn_name, deterministic, f)
+    }
+
+    pub fn set_on_execute(&mut self, on_execute: Box<Fn(&SqliteConnection, &str)>) {
+        self.on_execute = Some(on_execute);
+    }
+
+    pub fn clear_on_execute(&mut self) {
+        self.on_execute = None;
+    }
+
+    pub fn get_fts5_api(&self) -> QueryResult<*mut ffi::fts5_api> {
+        let fts_api = CString::new("fts5_api_ptr")?;
+        let select_fts = CString::new("SELECT fts5(?1)")?;
+        let mut p_ret: *mut ffi::fts5_api = ptr::null_mut();
+        let mut p_stmt: *mut ffi::sqlite3_stmt = ptr::null_mut();
+
+        unsafe {
+            let mut ret = ffi::sqlite3_prepare_v2(
+                self.raw_connection.internal_connection.as_ptr(),
+                select_fts.as_ptr(),
+                -1,
+                &mut p_stmt, ptr::null_mut()
+            );
+            ::sqlite::connection::stmt::ensure_sqlite_ok(ret, &self.raw_connection)?;
+            ret = ffi::sqlite3_bind_pointer(
+                p_stmt,
+                1,
+                &mut p_ret as *mut _ as *mut libc::c_void,
+                fts_api.as_ptr(), None
+            );
+            ::sqlite::connection::stmt::ensure_sqlite_ok(ret, &self.raw_connection)?;
+            ffi::sqlite3_step(p_stmt);
+            ret = ffi::sqlite3_finalize(p_stmt);
+            ::sqlite::connection::stmt::ensure_sqlite_ok(ret, &self.raw_connection)?;
+        }
+        Ok(p_ret)
     }
 }
 
