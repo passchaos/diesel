@@ -173,6 +173,7 @@ pub mod connection {
 macro_rules! embed_migrations {
     () => {
         #[allow(dead_code)]
+        #[allow(unused_imports)]
         mod embedded_migrations {
             #[derive(EmbedMigrations)]
             struct _Dummy;

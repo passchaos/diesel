@@ -4,6 +4,9 @@ use std::ffi::{CStr, CString};
 use std::io::{stderr, Write};
 use std::os::raw as libc;
 use std::ptr;
+use std::rc::Rc;
+
+use sqlite::on_error;
 
 use super::raw::RawConnection;
 use super::serialized_value::SerializedValue;
@@ -14,12 +17,13 @@ use sqlite::SqliteType;
 use util::NonNull;
 
 pub struct Statement {
+    raw_connection: Rc<RawConnection>,
     inner_statement: NonNull<ffi::sqlite3_stmt>,
     bind_index: libc::c_int,
 }
 
 impl Statement {
-    pub fn prepare(raw_connection: &RawConnection, sql: &str) -> QueryResult<Self> {
+    pub fn prepare(raw_connection: &Rc<RawConnection>, sql: &str) -> QueryResult<Self> {
         let mut stmt = ptr::null_mut();
         let mut unused_portion = ptr::null();
         let prepare_result = unsafe {
@@ -32,11 +36,10 @@ impl Statement {
             )
         };
 
-        ensure_sqlite_ok(prepare_result, raw_connection.internal_connection.as_ptr()).map(|_| {
-            Statement {
-                inner_statement: unsafe { NonNull::new_unchecked(stmt) },
-                bind_index: 0,
-            }
+        ensure_sqlite_ok(prepare_result, raw_connection).map(|_| Statement {
+            raw_connection: Rc::clone(raw_connection),
+            inner_statement: unsafe { NonNull::new_unchecked(stmt) },
+            bind_index: 0,
         })
     }
 
@@ -52,7 +55,7 @@ impl Statement {
         };
         let result = value.bind_to(self.inner_statement, self.bind_index);
 
-        ensure_sqlite_ok(result, self.raw_connection())
+        ensure_sqlite_ok(result, &self.raw_connection)
     }
 
     fn num_fields(&self) -> usize {
@@ -74,7 +77,10 @@ impl Statement {
         match unsafe { ffi::sqlite3_step(self.inner_statement.as_ptr()) } {
             ffi::SQLITE_DONE => Ok(None),
             ffi::SQLITE_ROW => Ok(Some(SqliteRow::new(self.inner_statement))),
-            _ => Err(last_error(self.raw_connection())),
+            e => {
+                on_error(e);
+                Err(last_error(&self.raw_connection))
+            },
         }
     }
 
@@ -82,13 +88,9 @@ impl Statement {
         self.bind_index = 0;
         unsafe { ffi::sqlite3_reset(self.inner_statement.as_ptr()) };
     }
-
-    fn raw_connection(&self) -> *mut ffi::sqlite3 {
-        unsafe { ffi::sqlite3_db_handle(self.inner_statement.as_ptr()) }
-    }
 }
 
-fn ensure_sqlite_ok(code: libc::c_int, raw_connection: *mut ffi::sqlite3) -> QueryResult<()> {
+pub fn ensure_sqlite_ok(code: libc::c_int, raw_connection: &RawConnection) -> QueryResult<()> {
     if code == ffi::SQLITE_OK {
         Ok(())
     } else {
@@ -96,10 +98,10 @@ fn ensure_sqlite_ok(code: libc::c_int, raw_connection: *mut ffi::sqlite3) -> Que
     }
 }
 
-fn last_error(raw_connection: *mut ffi::sqlite3) -> Error {
-    let error_message = last_error_message(raw_connection);
+fn last_error(raw_connection: &RawConnection) -> Error {
+    let error_message = raw_connection.last_error_message();
     let error_information = Box::new(error_message);
-    let error_kind = match last_error_code(raw_connection) {
+    let error_kind = match raw_connection.last_error_code() {
         ffi::SQLITE_CONSTRAINT_UNIQUE | ffi::SQLITE_CONSTRAINT_PRIMARYKEY => {
             DatabaseErrorKind::UniqueViolation
         }
@@ -109,21 +111,12 @@ fn last_error(raw_connection: *mut ffi::sqlite3) -> Error {
     DatabaseError(error_kind, error_information)
 }
 
-fn last_error_message(conn: *mut ffi::sqlite3) -> String {
-    let c_str = unsafe { CStr::from_ptr(ffi::sqlite3_errmsg(conn)) };
-    c_str.to_string_lossy().into_owned()
-}
-
-fn last_error_code(conn: *mut ffi::sqlite3) -> libc::c_int {
-    unsafe { ffi::sqlite3_extended_errcode(conn) }
-}
-
 impl Drop for Statement {
     fn drop(&mut self) {
         use std::thread::panicking;
 
         let finalize_result = unsafe { ffi::sqlite3_finalize(self.inner_statement.as_ptr()) };
-        if let Err(e) = ensure_sqlite_ok(finalize_result, self.raw_connection()) {
+        if let Err(e) = ensure_sqlite_ok(finalize_result, &self.raw_connection) {
             if panicking() {
                 write!(
                     stderr(),

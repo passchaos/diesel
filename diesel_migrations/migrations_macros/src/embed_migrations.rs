@@ -57,7 +57,7 @@ pub fn derive_embed_migrations(input: &syn::DeriveInput) -> quote::Tokens {
         pub fn run_with_output<C: MigrationConnection>(conn: &C, out: &mut io::Write)
             -> Result<(), RunMigrationsError>
         {
-            run_migrations(conn, ALL_MIGRATIONS.iter().map(|v| *v), out)
+            run_migrations(conn, ALL_MIGRATIONS.iter().map(|v| *v), out, None)
         }
     );
 
@@ -69,7 +69,7 @@ pub fn derive_embed_migrations(input: &syn::DeriveInput) -> quote::Tokens {
         use self::diesel::connection::SimpleConnection;
         use std::io;
 
-        const ALL_MIGRATIONS: &[&Migration] = &[#(#migrations_expr),*];
+        pub const ALL_MIGRATIONS: &[&Migration] = &[#(#migrations_expr),*];
 
         #embedded_migration_def
 
