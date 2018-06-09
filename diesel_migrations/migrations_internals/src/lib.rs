@@ -94,6 +94,7 @@ pub use diesel::migration::*;
 
 use std::fs::DirEntry;
 use std::io::{stdout, Write};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use diesel::expression_methods::*;
 use diesel::{Connection, QueryDsl, QueryResult, RunQueryDsl};
@@ -135,7 +136,7 @@ where
     Conn: MigrationConnection,
 {
     let all_migrations = try!(migrations_in_directory(migrations_dir));
-    run_migrations(conn, all_migrations, output)
+    run_migrations(conn, all_migrations, output, None)
 }
 
 /// Compares migrations found in `migrations_dir` to those that have been applied.
@@ -286,12 +287,14 @@ fn migrations_in_directory(path: &Path) -> Result<Vec<Box<Migration>>, Migration
         .collect()
 }
 
+pub type MigrationCallback = Box<Fn(&Migration)>;
 /// Run all pending migrations in the given list. Apps should likely be calling
 /// `run_pending_migrations` or `run_pending_migrations_in_directory` instead.
 pub fn run_migrations<Conn, List>(
     conn: &Conn,
     migrations: List,
     output: &mut Write,
+    callback: Option<MigrationCallback>
 ) -> Result<(), RunMigrationsError>
 where
     Conn: MigrationConnection,
@@ -308,6 +311,9 @@ where
     pending_migrations.sort_by(|a, b| a.version().cmp(b.version()));
     for migration in pending_migrations {
         try!(run_migration(conn, &migration, output));
+        if let Some(ref callback) = callback.as_ref() {
+            let _ = catch_unwind(AssertUnwindSafe(|| callback(&migration)));
+        }
     }
     Ok(())
 }

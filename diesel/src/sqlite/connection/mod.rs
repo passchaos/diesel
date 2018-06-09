@@ -31,6 +31,7 @@ pub struct SqliteConnection {
     statement_cache: StatementCache<Sqlite, Statement>,
     raw_connection: RawConnection,
     transaction_manager: AnsiTransactionManager,
+    on_execute: Option<Box<Fn(&str)>>,
 }
 
 // This relies on the invariant that RawConnection or Statement are never
@@ -40,6 +41,9 @@ unsafe impl Send for SqliteConnection {}
 
 impl SimpleConnection for SqliteConnection {
     fn batch_execute(&self, query: &str) -> QueryResult<()> {
+        if let Some(ref on_execute) = self.on_execute {
+            on_execute(query);
+        }
         self.raw_connection.exec(query)
     }
 }
@@ -49,10 +53,13 @@ impl Connection for SqliteConnection {
     type TransactionManager = AnsiTransactionManager;
 
     fn establish(database_url: &str) -> ConnectionResult<Self> {
-        RawConnection::establish(database_url).map(|conn| SqliteConnection {
-            statement_cache: StatementCache::new(),
-            raw_connection: conn,
-            transaction_manager: AnsiTransactionManager::new(),
+        RawConnection::establish(database_url).map(|conn| {
+            SqliteConnection {
+                statement_cache: StatementCache::new(),
+                raw_connection: conn,
+                transaction_manager: AnsiTransactionManager::new(),
+                on_execute: None
+            }
         })
     }
 
@@ -208,6 +215,9 @@ impl SqliteConnection {
         source: &T,
     ) -> QueryResult<MaybeCached<Statement>> {
         self.statement_cache.cached_statement(source, &[], |sql| {
+            if let Some(ref on_execute) = self.on_execute {
+                on_execute(sql);
+            }
             Statement::prepare(&self.raw_connection, sql)
         })
     }
@@ -226,6 +236,14 @@ impl SqliteConnection {
         Sqlite: HasSqlType<RetSqlType>,
     {
         functions::register(&self.raw_connection, fn_name, deterministic, f)
+    }
+
+    pub fn set_on_execute(&mut self, on_execute: Box<Fn(&str)>) {
+        self.on_execute = Some(on_execute);
+    }
+
+    pub fn clear_on_execute(&mut self) {
+        self.on_execute = None;
     }
 }
 

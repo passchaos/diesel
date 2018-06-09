@@ -4,6 +4,7 @@ use std::ffi::{CStr, CString};
 use std::io::{stderr, Write};
 use std::os::raw as libc;
 use std::{ptr, slice, str};
+use sqlite::on_error;
 
 use result::*;
 use result::Error::DatabaseError;
@@ -41,19 +42,20 @@ impl RawConnection {
         let query = try!(CString::new(query));
         let callback_fn = None;
         let callback_arg = ptr::null_mut();
-        unsafe {
+        let err_code = unsafe {
             ffi::sqlite3_exec(
                 self.internal_connection.as_ptr(),
                 query.as_ptr(),
                 callback_fn,
                 callback_arg,
                 &mut err_msg,
-            );
-        }
+            )
+        };
 
         if err_msg.is_null() {
             Ok(())
         } else {
+            on_error(err_code);
             let msg = convert_to_string_and_free(err_msg);
             let error_kind = DatabaseErrorKind::__Unknown;
             Err(DatabaseError(error_kind, Box::new(msg)))

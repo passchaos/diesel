@@ -6,6 +6,7 @@ use std::os::raw as libc;
 use std::ptr;
 
 use sqlite::SqliteType;
+use sqlite::on_error;
 use result::*;
 use result::Error::DatabaseError;
 use super::raw::RawConnection;
@@ -74,7 +75,10 @@ impl Statement {
         match unsafe { ffi::sqlite3_step(self.inner_statement.as_ptr()) } {
             ffi::SQLITE_DONE => Ok(None),
             ffi::SQLITE_ROW => Ok(Some(SqliteRow::new(self.inner_statement))),
-            _ => Err(last_error(self.raw_connection())),
+            e => {
+                on_error(e);
+                Err(last_error(self.raw_connection()))
+            },
         }
     }
 
