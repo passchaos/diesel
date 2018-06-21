@@ -31,7 +31,7 @@ pub struct SqliteConnection {
     statement_cache: StatementCache<Sqlite, Statement>,
     raw_connection: RawConnection,
     transaction_manager: AnsiTransactionManager,
-    on_execute: Option<Box<Fn(&str)>>,
+    on_execute: Option<Box<Fn(&SqliteConnection, &str)>>,
 }
 
 // This relies on the invariant that RawConnection or Statement are never
@@ -42,7 +42,7 @@ unsafe impl Send for SqliteConnection {}
 impl SimpleConnection for SqliteConnection {
     fn batch_execute(&self, query: &str) -> QueryResult<()> {
         if let Some(ref on_execute) = self.on_execute {
-            on_execute(query);
+            on_execute(&self, query);
         }
         self.raw_connection.exec(query)
     }
@@ -216,7 +216,7 @@ impl SqliteConnection {
     ) -> QueryResult<MaybeCached<Statement>> {
         self.statement_cache.cached_statement(source, &[], |sql| {
             if let Some(ref on_execute) = self.on_execute {
-                on_execute(sql);
+                on_execute(&self, sql);
             }
             Statement::prepare(&self.raw_connection, sql)
         })
@@ -238,7 +238,7 @@ impl SqliteConnection {
         functions::register(&self.raw_connection, fn_name, deterministic, f)
     }
 
-    pub fn set_on_execute(&mut self, on_execute: Box<Fn(&str)>) {
+    pub fn set_on_execute(&mut self, on_execute: Box<Fn(&SqliteConnection, &str)>) {
         self.on_execute = Some(on_execute);
     }
 
