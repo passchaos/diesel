@@ -59,14 +59,6 @@ pub fn derive_embed_migrations(input: &syn::DeriveInput) -> quote::Tokens {
         {
             run_migrations(conn, ALL_MIGRATIONS.iter().map(|v| *v), out, None)
         }
-
-        pub fn run_with_callback<C: MigrationConnection>(
-            conn: &C,
-            callback: MigrationCallback
-        ) -> Result<(), RunMigrationsError>
-        {
-            run_migrations(conn, ALL_MIGRATIONS.iter().map(|v| *v), &mut io::sink(), Some(callback))
-        }
     );
 
     quote! {
@@ -78,7 +70,7 @@ pub fn derive_embed_migrations(input: &syn::DeriveInput) -> quote::Tokens {
         use self::diesel::connection::SimpleConnection;
         use std::io;
 
-        const ALL_MIGRATIONS: &[&Migration] = &[#(#migrations_expr),*];
+        pub const ALL_MIGRATIONS: &[&Migration] = &[#(#migrations_expr),*];
 
         #embedded_migration_def
 
