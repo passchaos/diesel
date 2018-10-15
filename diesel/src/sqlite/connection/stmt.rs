@@ -89,7 +89,7 @@ impl Statement {
     }
 }
 
-fn ensure_sqlite_ok(code: libc::c_int, raw_connection: &RawConnection) -> QueryResult<()> {
+pub fn ensure_sqlite_ok(code: libc::c_int, raw_connection: &RawConnection) -> QueryResult<()> {
     if code == ffi::SQLITE_OK {
         Ok(())
     } else {

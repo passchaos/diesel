@@ -12,6 +12,8 @@ pub use self::sqlite_value::SqliteValue;
 
 use std::os::raw as libc;
 use std::rc::Rc;
+use std::ptr;
+use std::ffi::CString;
 
 use connection::*;
 use deserialize::{Queryable, QueryableByName};
@@ -245,6 +247,34 @@ impl SqliteConnection {
 
     pub fn clear_on_execute(&mut self) {
         self.on_execute = None;
+    }
+
+    pub fn get_fts5_api(&self) -> QueryResult<*mut ffi::fts5_api> {
+        let fts_api = CString::new("fts5_api_ptr")?;
+        let select_fts = CString::new("SELECT fts5(?1)")?;
+        let mut p_ret: *mut ffi::fts5_api = ptr::null_mut();
+        let mut p_stmt: *mut ffi::sqlite3_stmt = ptr::null_mut();
+
+        unsafe {
+            let mut ret = ffi::sqlite3_prepare_v2(
+                self.raw_connection.internal_connection.as_ptr(),
+                select_fts.as_ptr(),
+                -1,
+                &mut p_stmt, ptr::null_mut()
+            );
+            ::sqlite::connection::stmt::ensure_sqlite_ok(ret, &self.raw_connection)?;
+            ret = ffi::sqlite3_bind_pointer(
+                p_stmt,
+                1,
+                &mut p_ret as *mut _ as *mut libc::c_void,
+                fts_api.as_ptr(), None
+            );
+            ::sqlite::connection::stmt::ensure_sqlite_ok(ret, &self.raw_connection)?;
+            ffi::sqlite3_step(p_stmt);
+            ret = ffi::sqlite3_finalize(p_stmt);
+            ::sqlite::connection::stmt::ensure_sqlite_ok(ret, &self.raw_connection)?;
+        }
+        Ok(p_ret)
     }
 }
 
