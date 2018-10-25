@@ -6,10 +6,7 @@ use std::os::raw as libc;
 use std::ptr;
 use std::rc::Rc;
 
-use sqlite::SqliteType;
 use sqlite::on_error;
-use result::*;
-use result::Error::DatabaseError;
 
 use super::raw::RawConnection;
 use super::serialized_value::SerializedValue;
