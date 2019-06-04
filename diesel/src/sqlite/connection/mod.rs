@@ -249,7 +249,7 @@ impl SqliteConnection {
     pub fn clear_on_execute(&mut self) {
         self.on_execute = None;
     }
-
+    //doc
     pub fn get_fts5_api(&self) -> QueryResult<*mut ffi::fts5_api> {
         let fts_api = CString::new("fts5_api_ptr")?;
         let select_fts = CString::new("SELECT fts5(?1)")?;

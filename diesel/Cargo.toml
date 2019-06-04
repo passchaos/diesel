@@ -16,7 +16,7 @@ byteorder = "1.0"
 diesel_derives = "~1.3.0"
 chrono = { version = "0.4", optional = true }
 libc = { version = "0.2.0", optional = true }
-libsqlite3-sys = { version = ">=0.8.0, <0.10.0", optional = true, features = ["min_sqlite_version_3_7_16"] }
+libsqlite3_sys = {package = "libsqlite3-sys", version = "0.9.1",optional = true, features = ["sqlcipher", "bundled", "optimize", "secure_delete"] }
 mysqlclient-sys = { version = ">=0.1.0, <0.3.0", optional = true }
 pq-sys = { version = ">=0.3.0, <0.5.0", optional = true }
 quickcheck = { version = "0.4", optional = true }
@@ -39,7 +39,7 @@ quickcheck = "0.4"
 tempdir = "^0.3.4"
 
 [features]
-default = ["with-deprecated", "32-column-tables"]
+default = ["with-deprecated", "128-column-tables", "sqlite"]
 extras = ["chrono", "serde_json", "uuid", "deprecated-time", "network-address", "numeric", "r2d2"]
 unstable = ["diesel_derives/nightly"]
 large-tables = ["32-column-tables"]
@@ -51,7 +51,7 @@ x64-column-tables = ["64-column-tables"]
 x128-column-tables = ["128-column-tables"]
 128-column-tables = ["64-column-tables"]
 postgres = ["pq-sys", "bitflags", "diesel_derives/postgres"]
-sqlite = ["libsqlite3-sys", "diesel_derives/sqlite"]
+sqlite = ["libsqlite3_sys", "diesel_derives/sqlite"]
 mysql = ["mysqlclient-sys", "url", "diesel_derives/mysql"]
 with-deprecated = []
 deprecated-time = ["time"]

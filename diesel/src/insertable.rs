@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
-use backend::{Backend, SupportsDefaultKeyword};
+//use backend::{Backend, SupportsDefaultKeyword};
+use backend::Backend;
 use expression::{AppearsOnTable, Expression};
 use query_builder::{AstPass, InsertStatement, QueryFragment, UndecoratedInsertRecord, ValuesClause};
 use query_source::{Column, Table};
@@ -104,7 +105,7 @@ where
 
 impl<'a, T, Tab, DB> CanInsertInSingleQuery<DB> for BatchInsert<'a, T, Tab>
 where
-    DB: Backend + SupportsDefaultKeyword,
+    DB: Backend// + SupportsDefaultKeyword,
 {
     fn rows_to_insert(&self) -> Option<usize> {
         Some(self.records.len())
@@ -113,7 +114,7 @@ where
 
 impl<T, DB> CanInsertInSingleQuery<DB> for OwnedBatchInsert<T>
 where
-    DB: Backend + SupportsDefaultKeyword,
+    DB: Backend// + SupportsDefaultKeyword,
 {
     fn rows_to_insert(&self) -> Option<usize> {
         Some(self.values.len())
@@ -146,22 +147,26 @@ impl<Col, Expr> Default for ColumnInsertValue<Col, Expr> {
     }
 }
 
-impl<Col, Expr, DB> InsertValues<Col::Table, DB> for ColumnInsertValue<Col, Expr>
-where
-    DB: Backend + SupportsDefaultKeyword,
-    Col: Column,
-    Expr: Expression<SqlType = Col::SqlType> + AppearsOnTable<()>,
-    Self: QueryFragment<DB>,
-{
-    fn column_names(&self, mut out: AstPass<DB>) -> QueryResult<()> {
-        out.push_identifier(Col::NAME)?;
-        Ok(())
-    }
-}
+// impl<Col, Expr, DB> InsertValues<Col::Table, DB> for ColumnInsertValue<Col, Expr>
+// where
+//     DB: Backend,// + SupportsDefaultKeyword,
+//     Col: Column,
+//     Expr: Expression<SqlType = Col::SqlType> + AppearsOnTable<()>,
+//     Self: QueryFragment<DB>,
+// {
+//     fn column_names(&self, mut out: AstPass<DB>) -> QueryResult<()> {
+//         if let ColumnInsertValue::Expression(..) = *self {
+//             out.push_identifier(Col::NAME)?;
+//         }
+//         // out.push_identifier(Col::NAME)?;
+//         Ok(())
+//     }
+// }
 
+#[cfg(not(feature="sqlite"))]
 impl<Col, Expr, DB> QueryFragment<DB> for ColumnInsertValue<Col, Expr>
 where
-    DB: Backend + SupportsDefaultKeyword,
+    DB: Backend,// + SupportsDefaultKeyword,
     Expr: QueryFragment<DB>,
 {
     fn walk_ast(&self, mut out: AstPass<DB>) -> QueryResult<()> {
@@ -173,6 +178,19 @@ where
         Ok(())
     }
 }
+
+// impl<Col, Expr, DB> QueryFragment<DB> for ColumnInsertValue<Col, Expr>
+// where
+//     DB: Backend,
+//     Expr: QueryFragment<DB>,
+// {
+//     fn walk_ast(&self, mut out: AstPass<DB>) -> QueryResult<()> {
+//         if let ColumnInsertValue::Expression(_, ref value) = *self {
+//             value.walk_ast(out.reborrow())?;
+//         }
+//         Ok(())
+//     }
+// }
 
 #[cfg(feature = "sqlite")]
 impl<Col, Expr> InsertValues<Col::Table, Sqlite> for ColumnInsertValue<Col, Expr>
@@ -271,7 +289,7 @@ pub struct BatchInsert<'a, T: 'a, Tab> {
 
 impl<'a, T, Tab, Inner, DB> QueryFragment<DB> for BatchInsert<'a, T, Tab>
 where
-    DB: Backend + SupportsDefaultKeyword,
+    DB: Backend, //+ SupportsDefaultKeyword,
     &'a T: Insertable<Tab, Values = ValuesClause<Inner, Tab>>,
     ValuesClause<Inner, Tab>: QueryFragment<DB>,
     Inner: QueryFragment<DB>,
@@ -297,7 +315,7 @@ pub struct OwnedBatchInsert<V> {
 
 impl<Tab, DB, Inner> QueryFragment<DB> for OwnedBatchInsert<ValuesClause<Inner, Tab>>
 where
-    DB: Backend + SupportsDefaultKeyword,
+    DB: Backend,// + SupportsDefaultKeyword,
     ValuesClause<Inner, Tab>: QueryFragment<DB>,
     Inner: QueryFragment<DB>,
 {

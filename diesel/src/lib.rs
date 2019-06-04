@@ -128,7 +128,7 @@
 )]
 #![cfg_attr(feature = "unstable", feature(specialization, try_from))]
 // Built-in Lints
-#![deny(warnings, missing_debug_implementations, missing_copy_implementations, missing_docs)]
+#![deny(warnings, missing_debug_implementations, missing_copy_implementations)]
 // Clippy lints
 #![cfg_attr(
     feature = "cargo-clippy",
@@ -151,6 +151,8 @@
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;
+#[cfg(any(feature = "postgres", feature = "sqlite"))]
+pub mod upsert;
 // This is required to make `diesel_derives` re-export, but cargo-clippy thinks its unused
 #[cfg_attr(feature = "cargo-clippy", allow(useless_attribute))]
 #[allow(unused_imports)]

@@ -58,7 +58,9 @@ pub trait SupportsReturningClause {}
 pub trait SupportsDefaultKeyword {}
 /// Does this backend use the standard `SAVEPOINT` syntax?
 pub trait UsesAnsiSavepointSyntax {}
+pub trait SupportsOnConflictClause {}
 
 #[cfg(feature = "with-deprecated")]
 #[deprecated(since = "1.1.0", note = "use `sql_types::TypeMetadata` instead")]
 pub use sql_types::TypeMetadata;
+
