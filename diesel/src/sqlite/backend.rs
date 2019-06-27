@@ -52,4 +52,3 @@ impl TypeMetadata for Sqlite {
 
 impl UsesAnsiSavepointSyntax for Sqlite {}
 impl SupportsOnConflictClause for Sqlite{}
-//impl SupportsDefaultKeyword for Sqlite{}

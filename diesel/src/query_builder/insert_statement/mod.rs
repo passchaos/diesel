@@ -224,58 +224,44 @@ where
         })
     }
 }
-// impl<Conn, DB, T> ExecuteDsl<Conn, DB> for T
-// where
-//     Conn: Connection<Backend = DB>,
-//     DB: Backend,
-//     T: QueryFragment<DB> + QueryId,
-// {
-//     fn execute(query: Self, conn: &Conn) -> QueryResult<usize> {
-//         conn.execute_returning_count(&query)
-//     }
-// }
-// impl<'a, T, U, Op> ExecuteDsl<SqliteConnection> for InsertStatement<T, BatchInsert<'a, U, T>, Op>
-// where
-//     InsertStatement<T, &'a [U], Op>: ExecuteDsl<SqliteConnection>,
-// #[cfg(feature = "sqlite")]
-// use connection::Connection;
-// impl<Conn, DB, T> ExecuteDsl<Conn, DB> for T
-// where
-//     Conn: Connection<Backend = DB>,
-//     DB: Backend,
-//     T: QueryFragment<DB> + QueryId,
-// {
-//     fn execute(query: Self, conn: &SqliteConnection) -> QueryResult<usize> {
-//         InsertStatement::new(
-//             query.target,
-//             query.records.records,
-//             query.operator,
-//             query.returning,
-//         ).execute(conn)
-//     }
-// }
 
-// #[cfg(feature = "sqlite")]
-// impl<T, U, Op> ExecuteDsl<SqliteConnection>
-//     for InsertStatement<T, OwnedBatchInsert<ValuesClause<U, T>>, Op>
-// where
-//     InsertStatement<T, ValuesClause<U, T>, Op>: QueryFragment<Sqlite>,
-//     T: Copy,
-//     Op: Copy,
-// {
-//     fn execute(query: Self, conn: &SqliteConnection) -> QueryResult<usize> {
-//         use connection::Connection;
-//         conn.transaction(|| {
-//             let mut result = 0;
-//             for value in query.records.values {
-//                 result +=
-//                     InsertStatement::new(query.target, value, query.operator, query.returning)
-//                         .execute(conn)?;
-//             }
-//             Ok(result)
-//         })
-//     }
-// }
+#[cfg(feature = "sqlite")]
+impl<'a, T, U, Op> ExecuteDsl<SqliteConnection> for InsertStatement<T, BatchInsert<'a, U, T>, Op>
+where
+    InsertStatement<T, &'a [U], Op>: ExecuteDsl<SqliteConnection>,
+{
+    fn execute(query: Self, conn: &SqliteConnection) -> QueryResult<usize> {
+        InsertStatement::new(
+            query.target,
+            query.records.records,
+            query.operator,
+            query.returning,
+        ).execute(conn)
+    }
+}
+
+#[cfg(feature = "sqlite")]
+impl<T, U, Op> ExecuteDsl<SqliteConnection>
+    for InsertStatement<T, OwnedBatchInsert<ValuesClause<U, T>>, Op>
+where
+    InsertStatement<T, ValuesClause<U, T>, Op>: QueryFragment<Sqlite>,
+    T: Copy,
+    Op: Copy,
+{
+    fn execute(query: Self, conn: &SqliteConnection) -> QueryResult<usize> {
+        use connection::Connection;
+        conn.transaction(|| {
+            let mut result = 0;
+            for value in query.records.values {
+                result +=
+                    InsertStatement::new(query.target, value, query.operator, query.returning)
+                        .execute(conn)?;
+            }
+            Ok(result)
+        })
+    }
+}
+
 
 impl<T, U, Op, Ret> QueryId for InsertStatement<T, U, Op, Ret> {
     type QueryId = ();

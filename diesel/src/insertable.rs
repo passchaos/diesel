@@ -147,26 +147,27 @@ impl<Col, Expr> Default for ColumnInsertValue<Col, Expr> {
     }
 }
 
-// impl<Col, Expr, DB> InsertValues<Col::Table, DB> for ColumnInsertValue<Col, Expr>
-// where
-//     DB: Backend,// + SupportsDefaultKeyword,
-//     Col: Column,
-//     Expr: Expression<SqlType = Col::SqlType> + AppearsOnTable<()>,
-//     Self: QueryFragment<DB>,
-// {
-//     fn column_names(&self, mut out: AstPass<DB>) -> QueryResult<()> {
-//         if let ColumnInsertValue::Expression(..) = *self {
-//             out.push_identifier(Col::NAME)?;
-//         }
-//         // out.push_identifier(Col::NAME)?;
-//         Ok(())
-//     }
-// }
-
-#[cfg(not(feature="sqlite"))]
-impl<Col, Expr, DB> QueryFragment<DB> for ColumnInsertValue<Col, Expr>
+#[cfg(not(any(feature="sqlite")))]
+impl<Col, Expr, DB> InsertValues<Col::Table, DB> for ColumnInsertValue<Col, Expr>
 where
     DB: Backend,// + SupportsDefaultKeyword,
+    Col: Column,
+    Expr: Expression<SqlType = Col::SqlType> + AppearsOnTable<()>,
+    Self: QueryFragment<DB>,
+{
+    fn column_names(&self, mut out: AstPass<DB>) -> QueryResult<()> {
+        if let ColumnInsertValue::Expression(..) = *self {
+            out.push_identifier(Col::NAME)?;
+        }
+        // out.push_identifier(Col::NAME)?;
+        Ok(())
+    }
+}
+
+#[cfg(not(any(feature="sqlite")))]
+impl<Col, Expr, DB> QueryFragment<DB> for ColumnInsertValue<Col, Expr>
+where
+    DB: Backend, // + SupportsDefaultKeyword,
     Expr: QueryFragment<DB>,
 {
     fn walk_ast(&self, mut out: AstPass<DB>) -> QueryResult<()> {
@@ -179,6 +180,7 @@ where
     }
 }
 
+// #[cfg(feature="sqlite")]
 // impl<Col, Expr, DB> QueryFragment<DB> for ColumnInsertValue<Col, Expr>
 // where
 //     DB: Backend,
