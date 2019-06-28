@@ -128,7 +128,7 @@
 )]
 #![cfg_attr(feature = "unstable", feature(specialization, try_from))]
 // Built-in Lints
-#![deny(warnings, missing_debug_implementations, missing_copy_implementations, missing_docs)]
+#![deny(warnings, missing_debug_implementations, missing_copy_implementations)]
 // Clippy lints
 #![cfg_attr(
     feature = "cargo-clippy",
@@ -191,6 +191,7 @@ pub mod sql_types;
 pub mod migration;
 pub mod row;
 pub mod types;
+pub mod upsert;
 
 #[cfg(feature = "mysql")]
 pub mod mysql;

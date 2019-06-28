@@ -45,7 +45,7 @@ fn option_ty_arg(ty: &Type) -> Option<&Type> {
     }
 }
 
-pub fn ty_for_foreign_derive(item: &DeriveInput, flags: &MetaItem) -> Result<Type, Diagnostic> {
+pub fn ty_for_foreign_derive(item: &DeriveInput, flags: &MetaItem) -> std::result::Result<Type, Diagnostic> {
     if flags.has_flag("foreign_derive") {
         match item.data {
             Data::Struct(ref body) => match body.fields.iter().nth(0) {
