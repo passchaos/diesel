@@ -185,7 +185,9 @@ where
     T: QueryFragment<DB>,
 {
     fn walk_ast(&self, mut out: AstPass<DB>) -> QueryResult<()> {
-        out.unsafe_to_cache_prepared();
+        if ![1,2,3,4,5,6,7,8,9,10,20,50,100,200,500].contains(&self.0.len()) {
+            out.unsafe_to_cache_prepared();
+        }
         let mut first = true;
         for value in &self.0 {
             if first {
